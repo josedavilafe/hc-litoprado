@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Historias Clínicas · Litoprado S.A.S.</title>
+<style>
+:root{--pri:#0f6b78;--pri2:#0b5560;--ink:#1d2733;--mut:#66727f;--line:#dfe4ea;--err:#b3261e}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;background:#f4f6f8;color:var(--ink)}
+#login{min-height:100%;display:grid;place-items:center;padding:20px}
+.box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:30px 30px 26px;width:100%;max-width:400px;box-shadow:0 8px 30px rgba(15,40,60,.08)}
+.box h1{font-size:19px;margin:0 0 4px;color:var(--pri)}
+.box p{margin:0 0 20px;color:var(--mut);font-size:13px}
+label{font-size:13px;font-weight:600;display:block;margin-bottom:6px}
+.pw{position:relative}
+input{width:100%;font-size:16px;padding:11px 44px 11px 12px;border:1px solid #c5ccd4;border-radius:7px}
+input:focus{outline:2px solid var(--pri);border-color:var(--pri)}
+.eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:0;color:var(--mut);cursor:pointer;font-size:13px;padding:6px}
+button.go{margin-top:14px;width:100%;font:inherit;font-weight:600;border:0;border-radius:7px;padding:11px;cursor:pointer;background:var(--pri);color:#fff}
+button.go:hover{background:var(--pri2)}
+button.go:disabled{background:#a9b4bd;cursor:wait}
+#msg{min-height:20px;margin-top:12px;font-size:13px;color:var(--mut)}
+#msg.err{color:var(--err)}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:8px;display:none}
+.bar i{display:block;height:100%;width:0;background:var(--pri);transition:width .2s}
+.foot{margin-top:18px;font-size:11px;color:#9aa4ae;text-align:center}
+#app{position:fixed;inset:0;width:100%;height:100%;border:0;display:none;background:#fff}
+</style>
+</head>
+<body>
+<div id="login">
+  <form class="box" id="f" autocomplete="off">
+    <h1>Historias Clínicas · Litoprado S.A.S.</h1>
+    <p>Acceso restringido al personal autorizado.</p>
+    <label for="pw">Contraseña</label>
+    <div class="pw"><input type="password" id="pw" autofocus required><button type="button" class="eye" id="eye">Ver</button></div>
+    <button class="go" id="go">Entrar</button>
+    <div id="msg"></div>
+    <div class="bar" id="bar"><i></i></div>
+    <div class="foot" id="foot"></div>
+  </form>
+</div>
+<iframe id="app" title="Historias clínicas"></iframe>
+<script>
+(function(){
+  'use strict';
+  var CFG = {"salt":"VREdFcF+Yoen9Le/qcnkcQ==","iter":600000,"files":{"app":{"file":"app.bin","size":59654},"litoprado":{"file":"litoprado.bin","size":11699739},"jesus":{"file":"jesus.bin","size":2494239}},"fecha":"2026-11-24"};
+  var $ = function(id){ return document.getElementById(id); };
+  $('foot').textContent = 'Datos cifrados (AES-256) · Actualizado: ' + CFG.fecha;
+  $('eye').onclick = function(){ var i = $('pw'); i.type = i.type === 'password' ? 'text' : 'password'; this.textContent = i.type === 'password' ? 'Ver' : 'Ocultar'; };
+
+  function b64(s){ var b = atob(s), u = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+  function msg(t, err){ $('msg').textContent = t; $('msg').className = err ? 'err' : ''; }
+
+  var totalBytes = 0, doneBytes = 0;
+  Object.keys(CFG.files).forEach(function(k){ totalBytes += CFG.files[k].size; });
+  function progress(){ $('bar').firstElementChild.style.width = Math.min(100, Math.round(doneBytes / totalBytes * 90)) + '%'; }
+
+  function fetchBytes(file){
+    return fetch(file, { cache: 'no-cache' }).then(function(r){
+      if (!r.ok) throw new Error('No se pudo descargar ' + file + ' (' + r.status + ')');
+      if (!r.body || !r.body.getReader) return r.arrayBuffer().then(function(b){ doneBytes += b.byteLength; progress(); return new Uint8Array(b); });
+      var reader = r.body.getReader(), chunks = [], n = 0;
+      return (function pump(){ return reader.read().then(function(x){
+        if (x.done){ var o = new Uint8Array(n), p = 0; chunks.forEach(function(c){ o.set(c, p); p += c.length; }); return o; }
+        chunks.push(x.value); n += x.value.length; doneBytes += x.value.length; progress(); return pump();
+      }); })();
+    });
+  }
+  function open(key, bytes){
+    return crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes.slice(0, 12) }, key, bytes.slice(12)).then(function(plain){
+      return new Response(new Blob([plain]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+    });
+  }
+
+  $('f').onsubmit = function(e){
+    e.preventDefault();
+    if (!window.crypto || !crypto.subtle || typeof DecompressionStream === 'undefined'){ msg('Este navegador no es compatible. Use Chrome, Edge o Firefox actualizados.', true); return; }
+    var pass = $('pw').value;
+    $('go').disabled = true; msg('Verificando contraseña…');
+    var key;
+    crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey'])
+      .then(function(k){ return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64(CFG.salt), iterations: CFG.iter, hash: 'SHA-256' }, k, { name: 'AES-GCM', length: 256 }, false, ['decrypt']); })
+      .then(function(k){ key = k; doneBytes = 0; $('bar').style.display = 'block'; return fetchBytes(CFG.files.app.file); })
+      .then(function(bytes){ return open(key, bytes).catch(function(){ throw { pw: true }; }); })
+      .then(function(appHtml){
+        msg('Contraseña correcta. Descargando las bases de datos…');
+        var keys = Object.keys(CFG.files).filter(function(k){ return k !== 'app'; });
+        return Promise.all(keys.map(function(k){ return fetchBytes(CFG.files[k].file).then(function(b){ return open(key, b); }); }))
+          .then(function(texts){
+            msg('Preparando las bases…');
+            return new Promise(function(res){ setTimeout(function(){
+              var bases = {};
+              texts.forEach(function(t, i){ bases[keys[i]] = JSON.parse(t); });
+              res({ appHtml: appHtml, bases: bases });
+            }, 30); });
+          });
+      })
+      .then(function(r){
+        $('bar').firstElementChild.style.width = '100%';
+        window.HC_WEB_DATA = { bases: r.bases, salir: function(){ location.reload(); } };
+        var url = URL.createObjectURL(new Blob([r.appHtml], { type: 'text/html' }));
+        var fr = $('app');
+        fr.onload = function(){ $('login').style.display = 'none'; fr.style.display = 'block'; document.title = 'Historias Clínicas · Litoprado S.A.S.'; };
+        fr.src = url;
+        $('pw').value = ''; pass = null;
+      })
+      .catch(function(err){
+        $('go').disabled = false; $('bar').style.display = 'none';
+        if (err && err.pw){ msg('Contraseña incorrecta.', true); $('pw').select(); }
+        else msg('Error: ' + (err && err.message ? err.message : err), true);
+      });
+  };
+})();
+</script>
+</body>
+</html>
